@@ -1,13 +1,10 @@
 # Asteroids (Web)
 
-A self-contained, single-file HTML5 Canvas clone of the classic arcade game **Asteroids**.
-No build step, no dependencies — just open [`index.html`](index.html) in any modern browser.
+**▶ [Play it live](https://pupudinh.github.io/asteroids-web/)** — a self-contained, single-file HTML5 Canvas clone of the classic arcade game. No build step, no dependencies.
 
-## Play
+![Asteroids gameplay](demo.gif)
 
-Double-click `index.html`, or serve the folder and visit it in a browser.
-
-**Controls**
+## Controls
 
 | Key | Action |
 |-----|--------|
@@ -24,18 +21,19 @@ Double-click `index.html`, or serve the folder and visit it in a browser.
 - 3 lives; respawn with brief invulnerability (the ship blinks green).
 - Everything wraps around the screen edges.
 
-## Running a local server (optional)
+## Run it locally
 
-If you'd rather serve it over HTTP, a tiny dependency-free PowerShell server is included:
+Just open [`index.html`](index.html) in any modern browser — it runs straight from `file://`.
+
+Or serve it over HTTP with the included dependency-free PowerShell server (no Python/Node needed):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File serve.ps1 -Port 8080
 # then open http://localhost:8080/
 ```
 
-Opening `index.html` directly from disk works just as well.
+## How it works
 
-## About
-
-Built as a from-scratch browser recreation of a Unity 2D Asteroids project, using
-plain Canvas 2D and `requestAnimationFrame`. Everything lives in one file.
+Everything lives in one file: Canvas 2D rendering driven by `requestAnimationFrame`,
+a fixed-step game loop, circle-based collision detection, and screen-wrapping physics.
+Built as a from-scratch browser recreation of a Unity 2D Asteroids project.
