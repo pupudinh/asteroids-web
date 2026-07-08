@@ -37,15 +37,35 @@
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const W = canvas.width, H = canvas.height;
+const W = 900, H = 640;          // logical playfield size (see setupHiDPI)
 const TAU = Math.PI * 2;
+
+// Scale the backing store for crisp rendering on HiDPI / retina displays,
+// while keeping a fixed W x H logical coordinate system for all game code.
+function setupHiDPI() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// ---- tunables (single source of truth for game feel) ----
+const CONFIG = {
+  thrust: 0.18, turn: 0.07, friction: 0.992, maxSpeed: 8,
+  bulletSpeed: 9, bulletLife: 70, fireCooldown: 10,
+  startInvuln: 90, respawnInvuln: 120, respawnDelay: 90,
+  spawnIntervalStart: 120, spawnInterval: 130, maxAsteroids: 12,
+  asteroidRadius: 16, shipRadius: 9, safeRadius: 70,
+};
 
 // ---- input ----
 const keys = {};
+const PREVENT_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 addEventListener("keydown", e => {
-  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+  if (PREVENT_KEYS.has(e.code)) e.preventDefault();
   keys[e.code] = true;
-  if (e.code === "Space") tryShoot();
   if (e.code === "Enter" && game.state === "over") reset();
 });
 addEventListener("keyup", e => { keys[e.code] = false; });
@@ -59,14 +79,13 @@ function wrap(o) {
 }
 
 // ---- game state ----
-const game = { state: "playing", score: 0, lives: 3, invuln: 0, respawn: 0 };
+const game = { state: "playing", score: 0, lives: 3, invuln: 0, respawn: 0, fireTimer: 0 };
 let ship, asteroids, bullets, particles, spawnTimer;
 
 // ---- ship (momentum-based, mirrors the Unity Rigidbody2D feel) ----
 function makeShip() {
   return { x: W/2, y: H/2, a: -Math.PI/2, vx: 0, vy: 0, alive: true };
 }
-const THRUST = 0.18, TURN = 0.07, FRICTION = 0.992, MAXSPD = 8;
 
 // ---- asteroids ----
 // sizes: 3 = large, 2 = medium, 1 = small.  radius & score scale with size.
@@ -78,7 +97,7 @@ function spawnAsteroid(x, y, size) {
   for (let i = 0; i < pts; i++) shape.push(rand(0.75, 1.15));
   asteroids.push({
     x, y, size,
-    r: size * 16,
+    r: size * CONFIG.asteroidRadius,
     vx: Math.cos(dir) * speed,
     vy: Math.sin(dir) * speed,
     a: rand(0, TAU), va: rand(-0.03, 0.03),
@@ -96,16 +115,26 @@ function spawnFromEdge() {
 }
 
 // ---- bullets ----
-const BSPEED = 9, BLIFE = 70;
 function tryShoot() {
-  if (game.state !== "playing" || !ship.alive) return;
+  if (game.state !== "playing" || !ship.alive || game.fireTimer > 0) return;
   bullets.push({
     x: ship.x + Math.cos(ship.a) * 14,
     y: ship.y + Math.sin(ship.a) * 14,
-    vx: Math.cos(ship.a) * BSPEED + ship.vx,
-    vy: Math.sin(ship.a) * BSPEED + ship.vy,
-    life: BLIFE
+    vx: Math.cos(ship.a) * CONFIG.bulletSpeed + ship.vx,
+    vy: Math.sin(ship.a) * CONFIG.bulletSpeed + ship.vy,
+    life: CONFIG.bulletLife
   });
+  game.fireTimer = CONFIG.fireCooldown;
+}
+
+// True when no asteroid sits within `safeRadius` of the ship — used to avoid
+// dropping respawn invulnerability while a rock is on top of the spawn point.
+function shipClear() {
+  for (const a of asteroids) {
+    const dx = ship.x - a.x, dy = ship.y - a.y;
+    if (dx*dx + dy*dy < (a.r + CONFIG.safeRadius)**2) return false;
+  }
+  return true;
 }
 
 // ---- particles (explosions) ----
@@ -117,11 +146,12 @@ function boom(x, y, n, col) {
 }
 
 function reset() {
-  game.state = "playing"; game.score = 0; game.lives = 3; game.invuln = 90; game.respawn = 0;
+  game.state = "playing"; game.score = 0; game.lives = 3;
+  game.invuln = CONFIG.startInvuln; game.respawn = 0; game.fireTimer = 0;
   ship = makeShip();
   asteroids = []; bullets = []; particles = [];
   for (let i = 0; i < 4; i++) spawnFromEdge();
-  spawnTimer = 120;
+  spawnTimer = CONFIG.spawnIntervalStart;
 }
 
 // ---- collision on split (mirrors Asteroid.split: big ones spawn 2 smaller) ----
@@ -139,35 +169,39 @@ function killShip() {
   boom(ship.x, ship.y, 30, "#ff9f6b");
   game.lives--;
   if (game.lives <= 0) { game.state = "over"; }
-  else { game.respawn = 90; }
+  else { game.respawn = CONFIG.respawnDelay; }
 }
 
 // ---- update ----
 function update() {
   if (game.state === "playing") {
+    if (game.fireTimer > 0) game.fireTimer--;
     if (ship.alive) {
-      if (keys.KeyA || keys.ArrowLeft) ship.a -= TURN;
-      if (keys.KeyD || keys.ArrowRight) ship.a += TURN;
+      if (keys.KeyA || keys.ArrowLeft) ship.a -= CONFIG.turn;
+      if (keys.KeyD || keys.ArrowRight) ship.a += CONFIG.turn;
       if (keys.KeyW || keys.ArrowUp) {
-        ship.vx += Math.cos(ship.a) * THRUST;
-        ship.vy += Math.sin(ship.a) * THRUST;
+        ship.vx += Math.cos(ship.a) * CONFIG.thrust;
+        ship.vy += Math.sin(ship.a) * CONFIG.thrust;
         if (Math.random() < 0.6)
           particles.push({ x: ship.x - Math.cos(ship.a)*12, y: ship.y - Math.sin(ship.a)*12,
             vx: -Math.cos(ship.a)*rand(1,3)+ship.vx*0.3, vy: -Math.sin(ship.a)*rand(1,3)+ship.vy*0.3,
             life: rand(10,22), col: "#ffcf6b" });
       }
+      if (keys.Space) tryShoot();
       const sp = Math.hypot(ship.vx, ship.vy);
-      if (sp > MAXSPD) { ship.vx *= MAXSPD/sp; ship.vy *= MAXSPD/sp; }
-      ship.vx *= FRICTION; ship.vy *= FRICTION;
+      if (sp > CONFIG.maxSpeed) { ship.vx *= CONFIG.maxSpeed/sp; ship.vy *= CONFIG.maxSpeed/sp; }
+      ship.vx *= CONFIG.friction; ship.vy *= CONFIG.friction;
       ship.x += ship.vx; ship.y += ship.vy;
       wrap(ship);
-      if (game.invuln > 0) game.invuln--;
+      // Count invulnerability down, but never drop it on the final frame while a
+      // rock is still overlapping the spawn point — prevents unfair instant death.
+      if (game.invuln > 0 && (game.invuln > 1 || shipClear())) game.invuln--;
     } else if (game.respawn > 0) {
-      if (--game.respawn === 0) { ship = makeShip(); game.invuln = 120; }
+      if (--game.respawn === 0) { ship = makeShip(); game.invuln = CONFIG.respawnInvuln; }
     }
 
     // steady spawning
-    if (--spawnTimer <= 0 && asteroids.length < 12) { spawnFromEdge(); spawnTimer = 130; }
+    if (--spawnTimer <= 0 && asteroids.length < CONFIG.maxAsteroids) { spawnFromEdge(); spawnTimer = CONFIG.spawnInterval; }
 
     // bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -188,7 +222,7 @@ function update() {
     for (const a of asteroids) {
       a.x += a.vx; a.y += a.vy; a.a += a.va; wrap(a);
       if (ship.alive && game.invuln <= 0) {
-        if ((ship.x-a.x)**2 + (ship.y-a.y)**2 < (a.r+9)**2) killShip();
+        if ((ship.x-a.x)**2 + (ship.y-a.y)**2 < (a.r+CONFIG.shipRadius)**2) killShip();
       }
     }
   }
@@ -278,6 +312,7 @@ function draw() {
 }
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
+setupHiDPI();
 reset();
 loop();
 </script>
