@@ -35,5 +35,18 @@ powershell -ExecutionPolicy Bypass -File serve.ps1 -Port 8080
 ## How it works
 
 Everything lives in one file: Canvas 2D rendering driven by `requestAnimationFrame`,
-a fixed-step game loop, circle-based collision detection, and screen-wrapping physics.
+a game loop, circle-based collision detection (squared-distance, no `sqrt`), and
+screen-wrapping physics. The canvas backing store is scaled by `devicePixelRatio`
+for crisp rendering on HiDPI displays, and all tunables live in one `CONFIG` object.
 Built as a from-scratch browser recreation of a Unity 2D Asteroids project.
+
+## Known limitations / future work
+
+Deliberately out of scope for this single-file build — each is a clean next step:
+
+- **Desktop keyboard only.** No touch controls, so mobile is view-only for now.
+- **Fixed 900×640 playfield.** Scales down to fit small screens but isn't fully responsive.
+- **Brute-force collision.** `O(bullets × asteroids)` per frame with no spatial partitioning —
+  fine at the current object counts, but a spatial grid would be the fix at scale.
+- **No object pooling.** Bullets and particles are allocated per use; pooling would cut
+  garbage-collection churn if object counts grew large.
